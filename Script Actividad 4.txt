@@ -1,0 +1,76 @@
+
+Se inician los servidores
+MongoDB en modo configuración en el primer servidor
+mongod --configsvr --replSet configReplSet --dbpath "C:\data\dbc1" --port 27019
+mongod --configsvr --replSet configReplSet --dbpath "C:\data\dbc2" --port 27020
+mongod --configsvr --replSet configReplSet --dbpath "C:\data\dbc3" --port 27021
+
+mongosh --port 27019
+
+
+rs.initiate({_id: "configReplSet",configsvr: true,members: [{ _id: 0, host: "localhost:27019" },{ _id: 1, host: "localhost:27020" },{ _id: 2, host: "localhost:27021" }]);
+
+mongod --shardsvr --replSet shard1 --dbpath "C:\data\shard1" --port 27022
+mongod --shardsvr --replSet shard2 --dbpath "C:\data\shard2" --port 27023
+mongod --shardsvr --replSet shard3 --dbpath "C:\data\shard3" --port 27024
+
+mongosh --port 27022
+rs.initiate({
+   _id: "shard1",
+   members: [{ _id: 0, host: "localhost:27022" }]
+});
+
+mongosh --port 27023
+rs.initiate({
+   _id: "shard2",
+   members: [{ _id: 0, host: "localhost:27023" }]
+});
+
+mongosh --port 27024
+rs.initiate({
+   _id: "shard3",
+   members: [{ _id: 0, host: "localhost:27024" }]
+});
+
+
+mongos --configdb configReplSet/localhost:27019,localhost:27020,localhost:27021 --port 27017
+
+mongosh --port 27017
+
+sh.status();
+
+sh.addShard("shard1/localhost:27022");
+sh.addShard("shard2/localhost:27023");
+sh.addShard("shard3/localhost:27024");
+
+
+sh.enableSharding("torneo_voleibol");
+
+sh.shardCollection("torneo_voleibol.partidos", { sede: 1, categoria: 1 });
+
+sh.status();
+
+use torneo_voleibol;
+
+--------
+Inserts 
+for (let i = 0; i < 10000; i++) {
+    db.partidos.insertOne({
+        sede: "Sede_" + (i % 10),
+        categoria: "Categoria_" + (i % 5),
+        fecha: new Date(),
+        equipo1: "Equipo_A_" + i,
+        equipo2: "Equipo_B_" + i
+    });
+}
+
+-----busca por sede
+db.partidos.find({ sede: "Sede_1" }).explain("executionStats");
+-----busca por sede y categoria
+db.partidos.find({ sede: "Sede_2", categoria: "Categoria_3" }).explain("executionStats");
+----contar los partidos por sede
+db.partidos.aggregate([
+    { $group: { _id: "$sede", total_partidos: { $sum: 1 } } }
+]);
+---verificamos la distribucion
+db.partidos.getShardDistribution();
